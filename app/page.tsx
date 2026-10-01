@@ -59,7 +59,22 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
   return <svg {...common}><path d="M20 11.5a8 8 0 0 1-8 8 8.8 8.8 0 0 1-4-.9L3 20l1.4-4.5A8 8 0 1 1 20 11.5Z"/><path d="M8 8.5c.5 2.5 2 4 4.5 4.5"/></svg>;
 }
 
-function Brand({ light = false }: { light?: boolean }) { return <div className={`brand${light ? ' brand-light' : ''}`}><span className="brand-symbol"><Icon name="heart" size={19}/><span>+</span></span><span>carequeue</span></div>; }
+function Brand({ light = false, onClick }: { light?: boolean; onClick?: () => void }) {
+  return (
+    <div
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={e => { if (onClick && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onClick(); } }}
+      className={`brand${light ? ' brand-light' : ''}`}
+      style={{ cursor: onClick ? 'pointer' : 'default', userSelect: 'none' }}
+      title={onClick ? 'Return to Home' : undefined}
+    >
+      <span className="brand-symbol"><Icon name="heart" size={19}/><span>+</span></span>
+      <span>carequeue</span>
+    </div>
+  );
+}
 function formatTime(value: string) { if (!value) return 'Set time'; const [hour, minute] = value.split(':').map(Number); return `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${hour >= 12 ? 'pm' : 'am'}`; }
 function dateOffset(offset: number) { const date = new Date(); date.setHours(12, 0, 0, 0); date.setDate(date.getDate() + offset); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; }
 function formatArrivalTime(timestamp?: number) {
@@ -167,6 +182,12 @@ export default function Home() {
 
   useEffect(() => {
     try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlScreen = urlParams.get('screen');
+      if (urlScreen && ['home', 'signup', 'signin', 'profile', 'availability', 'link', 'queue', 'followups'].includes(urlScreen)) {
+        setScreen(urlScreen as Screen);
+        return;
+      }
       const savedScreen = localStorage.getItem('carequeue-active-screen');
       if (savedScreen && ['home', 'signup', 'signin', 'profile', 'availability', 'link', 'queue', 'followups'].includes(savedScreen)) {
         setScreen(savedScreen as Screen);
@@ -177,6 +198,15 @@ export default function Home() {
   useEffect(() => {
     try {
       localStorage.setItem('carequeue-active-screen', screen);
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        if (screen === 'home') {
+          url.searchParams.delete('screen');
+        } else {
+          url.searchParams.set('screen', screen);
+        }
+        window.history.replaceState({}, '', url.toString());
+      }
     } catch {}
   }, [screen]);
 
@@ -444,9 +474,20 @@ export default function Home() {
     <main className={`shell ${screen === 'home' ? 'shell-home' : ''}`}>
       <section className="main-panel">
         <header className="topbar">
-          <Brand/>
+          <Brand onClick={() => setScreen('home')}/>
           <span className="topbar-note">{isQueueScreen ? 'Clinic assistant' : 'Simple tools for better care'}</span>
           <div className="topbar-right">
+            {screen !== 'home' && (
+              <button
+                type="button"
+                className="help-support-button"
+                onClick={() => setScreen('home')}
+                title="Return to Home"
+                style={{ padding: '6px 12px' }}
+              >
+                <span>Home</span>
+              </button>
+            )}
             {screen !== 'home' && currentStep >= 0 && (
               <button className="save-label" onClick={() => setToast('Your progress saves automatically')}>
                 <span className="save-dot"/> Saved just now
