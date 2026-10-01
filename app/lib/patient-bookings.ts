@@ -1,3 +1,5 @@
+import { saveClinicToSupabase, fetchClinicFromSupabase } from './supabaseSync';
+
 export type ClinicHoursDay = { name: string; open: boolean; windows: { start: string; end: string }[] };
 export type PublicClinicConfig = { doctor: string; clinic: string; specialty: string; photo?: string; days: ClinicHoursDay[] };
 
@@ -265,6 +267,15 @@ export function getStoredClinic(handle: string): StoredClinic | null {
       saveStoredClinic(seed);
       return seed;
     }
+    // Background fetch from Supabase if not found locally
+    if (typeof window !== 'undefined') {
+      fetchClinicFromSupabase(cleanHandle).then(remote => {
+        if (remote) {
+          saveStoredClinic(remote);
+        }
+      }).catch(() => {});
+    }
+
     return null;
   } catch {
     return null;
@@ -287,6 +298,11 @@ export function saveStoredClinic(clinicData: StoredClinic): string {
       handles.push(cleanHandle);
       localStorage.setItem(HANDLES_STORAGE_KEY, JSON.stringify(handles));
     }
+
+    // Sync clinic profile and hours to Supabase in the background
+    try {
+      saveClinicToSupabase(dataToSave).catch(() => {});
+    } catch {}
   } catch {
     // safe fallback
   }

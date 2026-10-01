@@ -8,6 +8,14 @@
  * with a cross-tab localStorage storage event fallback.
  */
 
+import {
+  pushBookingToSupabase,
+  fetchQueueFromSupabase,
+  pushArrivalNoticeToSupabase,
+  deleteArrivalNoticeFromSupabase,
+  subscribeToSupabase,
+} from './supabaseSync';
+
 export type BookingStatus = 'waiting' | 'serving' | 'done' | 'skipped' | 'cancelled';
 export type Gender = 'male' | 'female' | 'other' | string;
 
@@ -273,18 +281,33 @@ export function subscribe(
     }
   };
 
-  window.addEventListener('storage', onStorage);
+  // 3. Supabase Realtime listener
+  const unsubSupabase = subscribeToSupabase(cleanHandle, () => {
+    // When a change arrives via Supabase Realtime, fetch updated queue and notify
+    const today = getTodayDateKey();
+    fetchQueueFromSupabase(cleanHandle, today).then(remoteQueue => {
+      if (remoteQueue && remoteQueue.length > 0) {
+        try {
+          localStorage.setItem(getQueueKey(cleanHandle, today), JSON.stringify(remoteQueue));
+        } catch {}
+      }
+      callback();
+    }).catch(() => {
+      callback();
+    });
+  });
 
   return () => {
     if (channel) {
       channel.removeEventListener('message', onChannelMessage);
     }
     window.removeEventListener('storage', onStorage);
+    unsubSupabase();
   };
 }
 
 /**
- * Saves a queue array to localStorage for a handle and date.
+ * Saves a queue array to localStorage for a handle and date, and syncs to Supabase.
  */
 function saveQueue(handle: string, date: string, queue: QueueBooking[]) {
   if (typeof window === 'undefined') return;
@@ -294,6 +317,13 @@ function saveQueue(handle: string, date: string, queue: QueueBooking[]) {
   } catch {
     // safe fallback
   }
+
+  // Asynchronously sync all bookings to Supabase in the background
+  try {
+    for (const b of queue) {
+      pushBookingToSupabase(b).catch(() => {});
+    }
+  } catch {}
 }
 
 /**
@@ -1135,6 +1165,11 @@ export function setArrivalNotice(
     }
   }
 
+  // Push to Supabase in the background
+  try {
+    pushArrivalNoticeToSupabase(notice).catch(() => {});
+  } catch {}
+
   notifyChange(cleanHandle, {
     type: 'arrival_notice',
     trackingCode: cleanCode,
@@ -1183,6 +1218,11 @@ export function clearArrivalNotice(handle: string, trackingCode: string): void {
   } catch {
     // safe fallback
   }
+
+  // Delete from Supabase in the background
+  try {
+    deleteArrivalNoticeFromSupabase(cleanHandle, cleanCode).catch(() => {});
+  } catch {}
 
   notifyChange(cleanHandle, {
     type: 'arrival_notice_cleared',
