@@ -381,9 +381,14 @@ export default function Home() {
     }
   }
   function handleLoadDemoPatients() {
-    loadDemoSeedBookings(activeHandle, today);
-    setDevMenuOpen(false);
-    setToast('Demo patients loaded');
+    try {
+      loadDemoSeedBookings(activeHandle, today);
+      setPatients(getQueue(activeHandle, today));
+      setDevMenuOpen(false);
+      setToast('Demo patients loaded');
+    } catch {
+      setToast('Could not load demo patients');
+    }
   }
   function announcePatient(patient: QueueBooking) {
     if (!('speechSynthesis' in window)) {

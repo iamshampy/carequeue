@@ -54,6 +54,7 @@ export interface AddBookingInput {
   createdAt?: number;
   startedAt?: number;
   completedAt?: number;
+  skipValidation?: boolean;
 }
 
 export interface ArrivalNotice {
@@ -489,9 +490,11 @@ export function loadDemoSeedBookings(handle: string, date: string): QueueBooking
         createdAt: seed.createdAt,
         startedAt: seed.startedAt,
         completedAt: seed.completedAt,
+        skipValidation: true,
       })
     );
   }
+  notifyChange(cleanHandle, { type: 'call_next', date });
   return added;
 }
 
@@ -668,58 +671,60 @@ export function addBooking(input: AddBookingInput): QueueBooking {
   const date = input.date;
 
   // ── Validation (throws BookingValidationError for UI-displayable messages) ─
-  const todayKey = getTodayDateKey();
-  const maxDateObj = new Date();
-  maxDateObj.setDate(maxDateObj.getDate() + 15);
-  const maxKey = getTodayDateKey(maxDateObj);
+  if (!input.skipValidation) {
+    const todayKey = getTodayDateKey();
+    const maxDateObj = new Date();
+    maxDateObj.setDate(maxDateObj.getDate() + 15);
+    const maxKey = getTodayDateKey(maxDateObj);
 
-  if (date < todayKey || date > maxKey) {
-    throw new BookingValidationError(
-      'Bookings are only accepted for today through the next 15 days.'
-    );
-  }
+    if (date < todayKey || date > maxKey) {
+      throw new BookingValidationError(
+        'Bookings are only accepted for today through the next 15 days.'
+      );
+    }
 
-  if (typeof window !== 'undefined') {
-    try {
-      const clinicRaw = localStorage.getItem(`carequeue-clinic:${cleanHandle}`);
-      if (clinicRaw) {
-        type ScheduleDay = { name: string; open: boolean; windows?: { start: string; end: string }[] };
-        const clinicData = JSON.parse(clinicRaw) as { days?: ScheduleDay[] };
+    if (typeof window !== 'undefined') {
+      try {
+        const clinicRaw = localStorage.getItem(`carequeue-clinic:${cleanHandle}`);
+        if (clinicRaw) {
+          type ScheduleDay = { name: string; open: boolean; windows?: { start: string; end: string }[] };
+          const clinicData = JSON.parse(clinicRaw) as { days?: ScheduleDay[] };
 
-        if (Array.isArray(clinicData.days)) {
-          const weekdayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-          const dayOfWeek = weekdayNames[new Date(`${date}T12:00:00`).getDay()];
-          const scheduleDay = clinicData.days.find(
-            d => d.name?.toLowerCase() === dayOfWeek.toLowerCase()
-          );
-
-          if (!scheduleDay?.open || !scheduleDay.windows?.length) {
-            throw new BookingValidationError(
-              `The clinic is closed on ${dayOfWeek}s. Please choose another day.`
+          if (Array.isArray(clinicData.days)) {
+            const weekdayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+            const dayOfWeek = weekdayNames[new Date(`${date}T12:00:00`).getDay()];
+            const scheduleDay = clinicData.days.find(
+              d => d.name?.toLowerCase() === dayOfWeek.toLowerCase()
             );
-          }
 
-          // If booking is for today, ensure the chosen session has not already ended.
-          if (date === todayKey && input.session) {
-            const sessionParts = input.session.split('-');
-            const sessionEnd = sessionParts[sessionParts.length - 1]?.trim();
-            if (sessionEnd && /^\d{2}:\d{2}$/.test(sessionEnd)) {
-              const [endHour, endMin] = sessionEnd.split(':').map(Number);
-              const now = new Date();
-              const endMinutes = endHour * 60 + endMin;
-              const currentMinutes = now.getHours() * 60 + now.getMinutes();
-              if (currentMinutes >= endMinutes) {
-                throw new BookingValidationError(
-                  'This session has already ended for today. Please choose another time.'
-                );
+            if (!scheduleDay?.open || !scheduleDay.windows?.length) {
+              throw new BookingValidationError(
+                `The clinic is closed on ${dayOfWeek}s. Please choose another day.`
+              );
+            }
+
+            // If booking is for today, ensure the chosen session has not already ended.
+            if (date === todayKey && input.session) {
+              const sessionParts = input.session.split('-');
+              const sessionEnd = sessionParts[sessionParts.length - 1]?.trim();
+              if (sessionEnd && /^\d{2}:\d{2}$/.test(sessionEnd)) {
+                const [endHour, endMin] = sessionEnd.split(':').map(Number);
+                const now = new Date();
+                const endMinutes = endHour * 60 + endMin;
+                const currentMinutes = now.getHours() * 60 + now.getMinutes();
+                if (currentMinutes >= endMinutes) {
+                  throw new BookingValidationError(
+                    'This session has already ended for today. Please choose another time.'
+                  );
+                }
               }
             }
           }
         }
+      } catch (err) {
+        if (err instanceof BookingValidationError) throw err;
+        // Ignore storage/parse errors — do not block the booking
       }
-    } catch (err) {
-      if (err instanceof BookingValidationError) throw err;
-      // Ignore storage/parse errors — do not block the booking
     }
   }
   // ── End validation ─────────────────────────────────────────────────────────
